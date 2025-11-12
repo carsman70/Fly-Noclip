@@ -1,5 +1,6 @@
--- ScriptBlock — Fly + Noclip (fixed deactivation flop, invite non-editable, nudged buttons left)
+-- ScriptBlock — Fly + Noclip (camera-look flight + swap/button left shift + swap hidden on deactivate)
 -- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
+-- Only the requested changes applied: camera-look flight math, invite+swap moved left, swap hides while deactivated.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -14,10 +15,10 @@ local GAME_DEFAULT_WALKSPEED = 16
 local MAX_VALUE = 1000
 local SNAP = 5
 
--- UPDATED DISCORD LINK
+-- UPDATED DISCORD LINK (unchangeable)
 local DISCORD_INVITE = "https://discord.gg/ns3amh7Gg9"
 
--- create ScreenGui (kept compact)
+-- create ScreenGui (compact)
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ScriptBlock_GUI"
 screenGui.ResetOnSpawn = false
@@ -140,10 +141,10 @@ local flyRow, flyLabel, flySquir = createRowWithSquircle(controlsFrame, 44, "Fly
 local speedRow = createSliderRow(controlsFrame, 92, "Speed", GAME_DEFAULT_WALKSPEED)
 speedRow.Row.Visible = false -- visible only when Fly ON
 
--- Elevated buttons: positions swapped earlier — now nudged slightly to the left as requested
+-- Elevated buttons: positions swapped earlier — now nudged slightly left as requested
 local deactivateBtn = Instance.new("TextButton", controlsFrame)
 deactivateBtn.Size = UDim2.new(0,100,0,28)
-deactivateBtn.Position = UDim2.new(0,2,0,128) -- nudged left a bit (was 8)
+deactivateBtn.Position = UDim2.new(0,2,0,128) -- nudged left
 deactivateBtn.BackgroundColor3 = Color3.fromRGB(110,110,110)
 deactivateBtn.Text = "Deactivate"
 deactivateBtn.Font = Enum.Font.GothamBold
@@ -153,7 +154,7 @@ Instance.new("UICorner", deactivateBtn).CornerRadius = UDim.new(0,6)
 
 local revertBtn = Instance.new("TextButton", controlsFrame)
 revertBtn.Size = UDim2.new(0,86,0,28)
-revertBtn.Position = UDim2.new(0, 104, 0, 128) -- nudged left (was 116)
+revertBtn.Position = UDim2.new(0, 104, 0, 128) -- nudged left
 revertBtn.BackgroundColor3 = Color3.fromRGB(110,110,110); revertBtn.Text = "Revert"
 revertBtn.Font = Enum.Font.GothamBold; revertBtn.TextSize = 14; revertBtn.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", revertBtn).CornerRadius = UDim.new(0,6)
@@ -169,9 +170,9 @@ resetReminder.TextColor3 = Color3.new(1,1,1)
 resetReminder.TextXAlignment = Enum.TextXAlignment.Left
 resetReminder.Visible = false
 
--- Invite box (non-deletable & self-refreshing)
+-- Invite box (non-deletable & self-refreshing). MOVED LEFT per request (smaller X offset)
 local inviteBox = Instance.new("TextBox", mainFrame)
-inviteBox.Size = UDim2.new(0.58,0,0,26); inviteBox.Position = UDim2.new(0.06,0,1,-36)
+inviteBox.Size = UDim2.new(0.58,0,0,26); inviteBox.Position = UDim2.new(0.02,0,1,-36) -- moved left (was 0.06)
 inviteBox.BackgroundTransparency = 0.3; inviteBox.Text = DISCORD_INVITE; inviteBox.ClearTextOnFocus = false
 inviteBox.Font = Enum.Font.Gotham; inviteBox.TextSize = 13; inviteBox.TextColor3 = Color3.new(1,1,1)
 inviteBox.TextXAlignment = Enum.TextXAlignment.Left
@@ -182,7 +183,7 @@ local function resizeInviteBox()
     local size = TextService:GetTextSize(inviteBox.Text, inviteBox.TextSize, inviteBox.Font, Vector2.new(2000,100))
     local newW = math.clamp(math.ceil(size.X) + pad, 100, FRAME_W - 100)
     inviteBox.Size = UDim2.new(0, newW, 0, 26)
-    inviteBox.Position = UDim2.new(0.06, 0, 1, -36)
+    inviteBox.Position = UDim2.new(0.02, 0, 1, -36)
 end
 resizeInviteBox()
 
@@ -206,7 +207,7 @@ inviteBox.InputBegan:Connect(function(input)
     end
 end)
 
--- Swap button (to right of invite) - toggles showing invite <-> showing the two buttons; nudged left to match others
+-- Swap button (to right of invite) - moved left slightly (position is kept updated)
 local swapBtn = Instance.new("TextButton", mainFrame)
 swapBtn.Size = UDim2.new(0, 56, 0, 26)
 swapBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -330,7 +331,7 @@ local function enableSliderDrag(slider)
 end
 enableSliderDrag(speedRow)
 
--- value box helpers
+-- value box helpers (unchanged)
 local function sanitizeNumberStringAllowDot(s)
     local cleaned = s:gsub("[^%d%.]", "")
     local firstDot = cleaned:find("%.")
@@ -430,7 +431,6 @@ local function cleanupFlyObjects()
     if hum then
         pcall(function() hum.PlatformStand = false end)
         pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
-        -- also ensure WalkSpeed is reasonable (game default)
         pcall(function() hum.WalkSpeed = math.clamp(speedRow.Value or GAME_DEFAULT_WALKSPEED, 0, MAX_VALUE) end)
     end
 end
@@ -471,11 +471,16 @@ local function enableFlyObjects(enable)
     bg.CFrame = hrp.CFrame
     bg.Parent = hrp
 
-    -- ensure PlatformStand to avoid physics fighting flight, but we'll clear it when disabling or deactivating
+    -- set PlatformStand so physics won't fight flight; we clear it on disable
     pcall(function() hum.PlatformStand = true end)
 end
 
--- Smooth flight loop
+-- *** NEW: camera-look flight math ***
+-- Explanation: combine camera forward/right axes with player's movement inputs so:
+-- - pressing forward moves in the direction camera is pointing (including up when looking up)
+-- - strafing uses camera right vector
+-- This follows the common approach used in many community fly scripts (LookVector + BodyVelocity).
+-- Implementation ensures you only move when there's movement input (prevents constant drifting).
 RunService.Heartbeat:Connect(function(dt)
     if deactivated then
         if bv then bv.Velocity = Vector3.new(0,0,0) end
@@ -494,28 +499,53 @@ RunService.Heartbeat:Connect(function(dt)
             enableFlyObjects(true)
         end
 
-        -- use Humanoid.MoveDirection (camera-relative) for input (works for mobile & keyboard)
+        -- Get the player's input direction (horizontal only) from Humanoid.MoveDirection
+        -- MoveDirection is already camera-relative horizontally, but Y=0; we project components into camera basis
         local moveDir = hum.MoveDirection or Vector3.new(0,0,0)
-        local speed = speedRow.Value or GAME_DEFAULT_WALKSPEED
-        speed = math.clamp(speed, 0, MAX_VALUE)
+        local inputMag = moveDir.Magnitude
+        if inputMag <= 0.001 then
+            -- no input: gently slow to stop
+            if bv and bv.Parent then
+                bv.Velocity = bv.Velocity:Lerp(Vector3.new(0,0,0), math.clamp(8 * dt, 0, 1))
+            end
+        else
+            -- camera axes
+            local camLook = cam.CFrame.LookVector
+            local camRight = cam.CFrame.RightVector
+            -- horizontal forward/right axes (Y zeroed) for combining with MoveDirection
+            local forwardAxis = Vector3.new(camLook.X, 0, camLook.Z)
+            local rightAxis = Vector3.new(camRight.X, 0, camRight.Z)
+            if forwardAxis.Magnitude < 1e-6 then forwardAxis = Vector3.new(0,0,1) end
+            if rightAxis.Magnitude < 1e-6 then rightAxis = Vector3.new(1,0,0) end
+            forwardAxis = forwardAxis.Unit
+            rightAxis = rightAxis.Unit
 
-        -- vertical control via keys (space up, shift down)
-        local vertical = 0
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then vertical = vertical + 1 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then vertical = vertical - 1 end
+            -- decompose moveDir into camera-local forward/right components
+            local forwardInput = Vector3.new(moveDir.X,0,moveDir.Z):Dot(forwardAxis)
+            local rightInput = Vector3.new(moveDir.X,0,moveDir.Z):Dot(rightAxis)
 
-        -- compute target velocity using camera orientation but relying on MoveDirection to be camera-relative
-        local targetVel = Vector3.new(moveDir.X * speed, vertical * speed * 0.8, moveDir.Z * speed)
+            -- horizontal velocity based on forward/right components
+            local speed = math.clamp(speedRow.Value or GAME_DEFAULT_WALKSPEED, 0, MAX_VALUE)
+            local horiz = (forwardAxis * forwardInput + rightAxis * rightInput) * speed
 
-        if bv and bv.Parent then
-            local current = bv.Velocity
-            local lerpVel = current:Lerp(targetVel, math.clamp(10 * dt, 0, 1))
-            bv.Velocity = lerpVel
-        end
+            -- vertical component: tied to camera pitch when moving forward/back
+            -- if you look up and press forward, you go up; look down + forward => go down
+            local vertical = camLook.Y * forwardInput * speed
 
-        if bg and bg.Parent and cam then
-            local look = CFrame.new(hrp.Position, hrp.Position + Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z))
-            bg.CFrame = look
+            local targetVel = Vector3.new(horiz.X, vertical, horiz.Z)
+
+            -- apply smooth lerp to BodyVelocity
+            if bv and bv.Parent then
+                local current = bv.Velocity
+                local lerpVel = current:Lerp(targetVel, math.clamp(12 * dt, 0, 1))
+                bv.Velocity = lerpVel
+            end
+
+            -- align body orientation to camera yaw so player faces camera direction
+            if bg and bg.Parent then
+                local look = CFrame.new(hrp.Position, hrp.Position + Vector3.new(camLook.X, 0, camLook.Z))
+                bg.CFrame = look
+            end
         end
     else
         -- not flying: ensure flight objects removed and WalkSpeed applied
@@ -526,6 +556,7 @@ RunService.Heartbeat:Connect(function(dt)
         end
     end
 end)
+-- *** end camera-look flight math ***
 
 -- Revert visibility depends on Fly ON (and swapMode must allow showing buttons)
 local function updateRevertVisibility()
@@ -552,7 +583,6 @@ local function setFly(on)
     speedRow.Row.Visible = on
     updateRevertVisibility()
     if deactivated then
-        -- while deactivated do not create fly objects
         if not on then cleanupFlyObjects() end
         return
     end
@@ -566,22 +596,20 @@ end
 noclipSquir.MouseButton1Click:Connect(function() setNoclip(not noclipEnabled) end)
 flySquir.MouseButton1Click:Connect(function() setFly(not flyEnabled) end)
 
--- Deactivate toggle
+-- Deactivate toggle: also hide swapBtn while deactivated (per your request)
 deactivateBtn.MouseButton1Click:Connect(function()
     deactivated = not deactivated
     if deactivated then
         deactivateBtn.Text = "Activate"
         darkOverlay.Visible = true
         resetReminder.Visible = true
-        -- clean up any fly objects and restore humanoid state to avoid flopping
+        swapBtn.Visible = false -- hide Swap while deactivated
         cleanupFlyObjects()
-        -- ensure noclip parts revert to normal collision when deactivated? (we respect user's noclip state but do not force)
-        -- *we do not force noclip state change here; we simply stop applying script effects*
     else
         deactivateBtn.Text = "Deactivate"
         darkOverlay.Visible = false
         resetReminder.Visible = false
-        -- on reactivation, re-apply if toggles are still on
+        swapBtn.Visible = true -- restore Swap when reactivated
         if flyEnabled then enableFlyObjects(true) end
         if noclipEnabled then enableNoclip(true) end
     end
@@ -595,7 +623,6 @@ revertBtn.MouseButton1Click:Connect(function()
     speedRow.Fill.Size = UDim2.new(default / MAX_VALUE, 0, 1, 0)
     speedRow.Knob.Position = UDim2.new(default / MAX_VALUE, 0, 0.5, 0)
     speedRow.ValueBox.Text = tostring(default)
-    -- apply immediately if not deactivated and not flying
     if not deactivated and not flyEnabled then
         local char = player.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -608,7 +635,6 @@ swapBtn.MouseButton1Click:Connect(function()
     swapMode = not swapMode
     if swapMode then
         inviteBox.Visible = false
-        -- show deactivate and revert area, revert only when fly is on
         deactivateBtn.Visible = true
         revertBtn.Visible = flyEnabled
     else
@@ -616,7 +642,6 @@ swapBtn.MouseButton1Click:Connect(function()
         deactivateBtn.Visible = false
         revertBtn.Visible = false
     end
-    -- reset reminder visibility consistent
     if deactivated and swapMode then
         resetReminder.Visible = true
     else
@@ -630,7 +655,7 @@ minBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     controlsFrame.Visible = not minimized
     inviteBox.Visible = not minimized and (not swapMode)
-    swapBtn.Visible = not minimized
+    swapBtn.Visible = not minimized and (not deactivated)
     if minimized then
         resetReminder.Visible = false
         mainFrame.Size = UDim2.new(0, FRAME_W, 0, 36)
