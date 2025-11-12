@@ -1,6 +1,6 @@
-# MyScript — public build
+# Fly-Noclip — public build
 
-This repository contains a public build / artifact of MyScript.
+This repository contains a public build / artifact of Fly-Noclip.
 Source code is proprietary and not included.
 
 License: Restricted Use — Non-Redistribution (2025). See LICENSE file.
