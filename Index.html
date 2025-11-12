@@ -1,7 +1,7 @@
--- ScriptBlock — Fly (Roblox flying) + Noclip
--- Changes: use Humanoid:ChangeState(Flying) + Humanoid:Move for camera-relative flying,
--- squircles are clickable toggle buttons, live slider value updates, elevated controls, smaller width,
--- slider default reads game's WalkSpeed on spawn. Only requested edits applied.
+-- ScriptBlock — Fly + Noclip (updated)
+-- Changes applied: improved flight (BodyVelocity + BodyGyro), revert visible only when Fly ON,
+-- swapped positions of Deactivate & Revert, updated Discord invite, added Swap button next to invite (toggles invite vs buttons).
+-- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -16,16 +16,17 @@ local GAME_DEFAULT_WALKSPEED = 16
 local MAX_VALUE = 1000
 local SNAP = 5
 
-local DISCORD_INVITE = "https://discord.gg/9mTKFv5HR"
+-- UPDATED DISCORD LINK
+local DISCORD_INVITE = "https://discord.gg/ns3amh7Gg9"
 
--- create ScreenGui (smaller width)
+-- create ScreenGui (kept compact)
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ScriptBlock_GUI"
 screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 1000
 screenGui.Parent = playerGui
 
-local FRAME_W, FRAME_H = 300, 220 -- reduced width
+local FRAME_W, FRAME_H = 300, 220
 local mainFrame = Instance.new("Frame", screenGui)
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, FRAME_W, 0, FRAME_H)
@@ -67,7 +68,7 @@ local controlsFrame = Instance.new("Frame", body)
 controlsFrame.Name = "Controls"; controlsFrame.Size = UDim2.new(1,-16,0,140); controlsFrame.Position = UDim2.new(0,8,0,8)
 controlsFrame.BackgroundTransparency = 1; controlsFrame.Visible = true
 
--- Helper to create compact slider row (slider near label)
+-- compact slider row creator
 local function createSliderRow(parent, y, labelText, default)
     local row = Instance.new("Frame", parent)
     row.Size = UDim2.new(1,0,0,36); row.Position = UDim2.new(0,0,0,y); row.BackgroundTransparency = 1
@@ -78,7 +79,6 @@ local function createSliderRow(parent, y, labelText, default)
     lbl.BackgroundTransparency = 1; lbl.Text = labelText; lbl.TextColor3 = Color3.new(1,1,1)
     lbl.Font = Enum.Font.Gotham; lbl.TextSize = 14; lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- slider track occupies most of remaining width
     local track = Instance.new("Frame", row)
     track.Size = UDim2.new(1, -140, 0, 10)
     track.Position = UDim2.new(0,80,0,13)
@@ -95,7 +95,6 @@ local function createSliderRow(parent, y, labelText, default)
     knob.BackgroundColor3 = Color3.fromRGB(230,230,230); knob.BorderSizePixel = 0; knob.AutoButtonColor = false
     Instance.new("UICorner", knob).CornerRadius = UDim.new(0,9)
 
-    -- small textbox for value on the right
     local sampleSize = TextService:GetTextSize("1000", 14, Enum.Font.Gotham, Vector2.new(1000,1000))
     local boxWidth = math.clamp(math.ceil(sampleSize.X) + 6, 36, 56)
     local valueBox = Instance.new("TextBox", row)
@@ -113,7 +112,7 @@ local function createSliderRow(parent, y, labelText, default)
     }
 end
 
--- Create Noclip & Fly labels (left) and make the squircles clickable buttons on the right
+-- create left label + squircles on the right (squircles are buttons)
 local function createRowWithSquircle(parent, y, text)
     local row = Instance.new("Frame", parent)
     row.Size = UDim2.new(1,0,0,40); row.Position = UDim2.new(0,0,0,y); row.BackgroundTransparency = 1
@@ -123,7 +122,6 @@ local function createRowWithSquircle(parent, y, text)
     lbl.BackgroundTransparency = 1; lbl.Text = text; lbl.TextColor3 = Color3.new(1,1,1)
     lbl.Font = Enum.Font.Gotham; lbl.TextSize = 14; lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- squircle button on right (actual toggle)
     local squir = Instance.new("TextButton", row)
     squir.Size = UDim2.new(0,36,0,28)
     squir.Position = UDim2.new(1, -44, 0, 6)
@@ -140,20 +138,14 @@ end
 local noclipRow, noclipLabel, noclipSquir = createRowWithSquircle(controlsFrame, 0, "Noclip")
 local flyRow, flyLabel, flySquir = createRowWithSquircle(controlsFrame, 44, "Fly")
 
--- Speed slider moved down and closer to label
+-- Speed slider (moved down)
 local speedRow = createSliderRow(controlsFrame, 92, "Speed", GAME_DEFAULT_WALKSPEED)
-speedRow.Row.Visible = false -- only visible when Fly is ON
+speedRow.Row.Visible = false -- visible only when Fly ON
 
--- Elevated controls positions (moved upward per your request)
-local revertBtn = Instance.new("TextButton", controlsFrame)
-revertBtn.Size = UDim2.new(0,86,0,28); revertBtn.Position = UDim2.new(0,8,0,128)
-revertBtn.BackgroundColor3 = Color3.fromRGB(110,110,110); revertBtn.Text = "Revert"
-revertBtn.Font = Enum.Font.GothamBold; revertBtn.TextSize = 14; revertBtn.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", revertBtn).CornerRadius = UDim.new(0,6)
-
+-- Elevated buttons: positions swapped (Deactivate and Revert swapped)
 local deactivateBtn = Instance.new("TextButton", controlsFrame)
 deactivateBtn.Size = UDim2.new(0,100,0,28)
-deactivateBtn.Position = UDim2.new(0, 104, 0, 128)
+deactivateBtn.Position = UDim2.new(0,8,0,128) -- previously revert position
 deactivateBtn.BackgroundColor3 = Color3.fromRGB(110,110,110)
 deactivateBtn.Text = "Deactivate"
 deactivateBtn.Font = Enum.Font.GothamBold
@@ -161,9 +153,16 @@ deactivateBtn.TextSize = 14
 deactivateBtn.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", deactivateBtn).CornerRadius = UDim.new(0,6)
 
+local revertBtn = Instance.new("TextButton", controlsFrame)
+revertBtn.Size = UDim2.new(0,86,0,28)
+revertBtn.Position = UDim2.new(0, 116, 0, 128) -- swapped to the right (previous deactivate spot)
+revertBtn.BackgroundColor3 = Color3.fromRGB(110,110,110); revertBtn.Text = "Revert"
+revertBtn.Font = Enum.Font.GothamBold; revertBtn.TextSize = 14; revertBtn.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", revertBtn).CornerRadius = UDim.new(0,6)
+
 local resetReminder = Instance.new("TextLabel", controlsFrame)
 resetReminder.Size = UDim2.new(0, 60, 0, 28)
-resetReminder.Position = UDim2.new(0, 212, 0, 128)
+resetReminder.Position = UDim2.new(0, 220, 0, 128)
 resetReminder.BackgroundTransparency = 1
 resetReminder.Text = "reset"
 resetReminder.Font = Enum.Font.GothamBold
@@ -174,7 +173,7 @@ resetReminder.Visible = false
 
 -- Invite box (non-deletable)
 local inviteBox = Instance.new("TextBox", mainFrame)
-inviteBox.Size = UDim2.new(0.72,0,0,26); inviteBox.Position = UDim2.new(0.06,0,1,-36)
+inviteBox.Size = UDim2.new(0.58,0,0,26); inviteBox.Position = UDim2.new(0.06,0,1,-36)
 inviteBox.BackgroundTransparency = 0.3; inviteBox.Text = DISCORD_INVITE; inviteBox.ClearTextOnFocus = false
 inviteBox.Font = Enum.Font.Gotham; inviteBox.TextSize = 13; inviteBox.TextColor3 = Color3.new(1,1,1)
 inviteBox.TextXAlignment = Enum.TextXAlignment.Left
@@ -183,11 +182,32 @@ Instance.new("UICorner", inviteBox).CornerRadius = UDim.new(0,6)
 local function resizeInviteBox()
     local pad = 16
     local size = TextService:GetTextSize(inviteBox.Text, inviteBox.TextSize, inviteBox.Font, Vector2.new(2000,100))
-    local newW = math.clamp(math.ceil(size.X) + pad, 100, FRAME_W - 80)
+    local newW = math.clamp(math.ceil(size.X) + pad, 100, FRAME_W - 100)
     inviteBox.Size = UDim2.new(0, newW, 0, 26)
     inviteBox.Position = UDim2.new(0.06, 0, 1, -36)
 end
 resizeInviteBox()
+
+-- Swap button (to right of invite) - toggles showing invite <-> showing the two buttons
+local swapBtn = Instance.new("TextButton", mainFrame)
+swapBtn.Size = UDim2.new(0, 56, 0, 26) -- sized to fit text
+swapBtn.Position = UDim2.new(0, inviteBox.AbsolutePosition and inviteBox.AbsolutePosition.X + inviteBox.AbsoluteSize.X + 8 or 200, 1, -36) -- will be repositioned below
+swapBtn.AnchorPoint = Vector2.new(0,0)
+swapBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+swapBtn.Text = "swap"
+swapBtn.Font = Enum.Font.GothamBold
+swapBtn.TextSize = 13
+swapBtn.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", swapBtn).CornerRadius = UDim.new(0,6)
+
+-- Position swapBtn relative to inviteBox each frame (to keep it in place after resizing/repositions)
+local function updateSwapPosition()
+    swapBtn.Position = UDim2.new(0, inviteBox.AbsolutePosition.X + inviteBox.AbsoluteSize.X + 8 - mainFrame.AbsolutePosition.X, 1, -36)
+end
+
+inviteBox:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateSwapPosition)
+inviteBox:GetPropertyChangedSignal("AbsolutePosition"):Connect(updateSwapPosition)
+updateSwapPosition()
 
 -- Dark overlay for Deactivate
 local darkOverlay = Instance.new("Frame", mainFrame)
@@ -208,7 +228,7 @@ dragSticker.Image = ""; dragSticker.Parent = mainFrame
 Instance.new("UICorner", dragSticker).CornerRadius = UDim.new(0,6)
 local originalStickerPos = dragSticker.Position
 
--- Dragging behavior (same robust touch + mouse support)
+-- Dragging behavior
 local function clampPositionToScreen(px, py)
     local cam = workspace.CurrentCamera
     if not cam then return px, py end
@@ -241,6 +261,7 @@ UserInputService.InputChanged:Connect(function(input)
     local newPos = dragStartPos + delta
     local nx, ny = clampPositionToScreen(newPos.X, newPos.Y)
     mainFrame.Position = UDim2.new(0, nx, 0, ny)
+    updateSwapPosition()
     if dragSticker.Parent == screenGui then
         dragSticker.Position = UDim2.new(0, nx + mainFrame.AbsoluteSize.X - 34, 0, ny + mainFrame.AbsoluteSize.Y + 6)
     end
@@ -273,7 +294,6 @@ local function enableSliderDrag(slider)
         slider.Knob.Position = UDim2.new(value / MAX_VALUE, 0, 0.5, 0)
         if not slider.ValueBox:IsFocused() then
             slider.ValueBox.Text = tostring(value)
-            pcall(function() fitTextToBox(slider.ValueBox, slider.ValueBox.Text) end)
         end
     end)
 
@@ -290,13 +310,12 @@ local function enableSliderDrag(slider)
         slider.Knob.Position = UDim2.new(value / MAX_VALUE, 0, 0.5, 0)
         if not slider.ValueBox:IsFocused() then
             slider.ValueBox.Text = tostring(value)
-            pcall(function() fitTextToBox(slider.ValueBox, slider.ValueBox.Text) end)
         end
     end)
 end
 enableSliderDrag(speedRow)
 
--- value box helpers (allow decimals)
+-- value box helpers
 local function sanitizeNumberStringAllowDot(s)
     local cleaned = s:gsub("[^%d%.]", "")
     local firstDot = cleaned:find("%.")
@@ -317,24 +336,6 @@ local function formatNumber(n)
         s = s:gsub("%.$", "")
     end
     return s
-end
-local function fitTextToBox(box, text)
-    local maxSize, minSize = 13, 8
-    if not text then text = box.Text end
-    local w = box.AbsoluteSize.X
-    if w <= 0 then return end
-    local size = maxSize
-    local pad = 6
-    while size < maxSize do
-        local ts = TextService:GetTextSize(text, size+1, box.Font, Vector2.new(2000,100))
-        if ts.X <= w - pad then size = size + 1 else break end
-    end
-    while size > minSize do
-        local ts = TextService:GetTextSize(text, size, box.Font, Vector2.new(2000,100))
-        if ts.X <= w - pad then break end
-        size = size - 1
-    end
-    box.TextSize = size
 end
 
 local function liveFilterDigitsAndDot(box)
@@ -357,9 +358,7 @@ local function liveFilterDigitsAndDot(box)
                 box.CursorPosition = newCur
             end)
         end
-        pcall(function() fitTextToBox(box, box.Text) end)
     end)
-    box:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() pcall(function() fitTextToBox(box, box.Text) end) end)
 end
 
 local function hookValueBox(slider)
@@ -369,38 +368,47 @@ local function hookValueBox(slider)
         local txt = box.Text or ""
         local num, _ = sanitizeNumberStringAllowDot(txt)
         if not num then
-            box.Text = formatNumber(slider.SavedValue)
+            box.Text = tostring(slider.SavedValue)
             slider.Value = slider.SavedValue
             slider.Fill.Size = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 1, 0)
             slider.Knob.Position = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 0.5, 0)
-            fitTextToBox(box, box.Text)
             return
         end
         local clamped = math.clamp(num, 0, MAX_VALUE)
         if clamped ~= num then
-            box.Text = formatNumber(slider.SavedValue)
+            box.Text = tostring(slider.SavedValue)
             slider.Value = slider.SavedValue
             slider.Fill.Size = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 1, 0)
             slider.Knob.Position = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 0.5, 0)
-            fitTextToBox(box, box.Text)
             return
         end
         slider.Value = clamped
         slider.SavedValue = clamped
         slider.Fill.Size = UDim2.new(clamped / MAX_VALUE, 0, 1, 0)
         slider.Knob.Position = UDim2.new(clamped / MAX_VALUE, 0, 0.5, 0)
-        box.Text = formatNumber(clamped)
-        fitTextToBox(box, box.Text)
+        box.Text = tostring(clamped)
     end)
 end
 hookValueBox(speedRow)
 
--- Fly & Noclip state
+-- states
 local flyEnabled = false
 local noclipEnabled = false
 local deactivated = false
+local swapMode = false -- false: show invite (default). true: hide invite, show revert/deactivate
 
--- Keep a reference to humanoid objects used for fly state; we will rely on Humanoid:ChangeState(Flying)
+-- Flight runtime objects
+local bv, bg
+local function cleanupFlyObjects()
+    if bv and bv.Parent then pcall(function() bv:Destroy() end) end
+    if bg and bg.Parent then pcall(function() bg:Destroy() end) end
+    bv, bg = nil, nil
+    -- restore PlatformStand false
+    local char = player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then pcall(function() hum.PlatformStand = false end) end
+end
+
 local function enableNoclip(enable)
     local char = player.Character
     if not char then return end
@@ -411,41 +419,78 @@ local function enableNoclip(enable)
     end
 end
 
--- Fly implementation using Humanoid:ChangeState(Flying) + Humanoid:Move (camera-relative)
-local function enableFly(enable)
+local function enableFlyObjects(enable)
     local char = player.Character
     if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-
-    if enable then
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Flying) end)
-    else
-        -- return to running state (or fall back to getting back to living)
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Physics) end)
+    if not hrp or not hum then return end
+    if not enable then
+        cleanupFlyObjects()
+        return
     end
+
+    cleanupFlyObjects()
+    bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bv.Velocity = Vector3.new(0,0,0)
+    bv.P = 9e4
+    bv.Parent = hrp
+
+    bg = Instance.new("BodyGyro")
+    bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
+    bg.P = 9e4
+    bg.CFrame = hrp.CFrame
+    bg.Parent = hrp
+
+    pcall(function() hum.PlatformStand = true end)
 end
 
--- Update loop for flying & applying WalkSpeed when not fly
+-- Smooth flight loop
 RunService.Heartbeat:Connect(function(dt)
-    if deactivated then return end
+    if deactivated then
+        if bv then bv.Velocity = Vector3.new(0,0,0) end
+        return
+    end
+
     local char = player.Character
     if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
+    local cam = workspace.CurrentCamera
+    if not hrp or not hum or not cam then return end
 
-    -- If Fly is enabled, use Humanoid:Move with MoveDirection (camera-relative)
     if flyEnabled then
-        -- ensure humanoid is in Flying state
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Flying) end)
-        local moveDir = hum.MoveDirection or Vector3.new(0,0,0) -- already camera-relative
+        if not bv or not bg or not bv.Parent then
+            enableFlyObjects(true)
+        end
+
+        -- use Humanoid.MoveDirection (camera-relative) for input
+        local moveDir = hum.MoveDirection or Vector3.new(0,0,0)
         local speed = speedRow.Value or GAME_DEFAULT_WALKSPEED
         speed = math.clamp(speed, 0, MAX_VALUE)
 
-        -- Humanoid:Move expects a Vector3 where magnitude controls speed; multiply
-        pcall(function() hum:Move(moveDir * speed, false) end)
+        -- vertical control via keys (space and left shift)
+        local vertical = 0
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then vertical = vertical + 1 end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then vertical = vertical - 1 end
+
+        local targetVel = Vector3.new(moveDir.X * speed, vertical * speed * 0.8, moveDir.Z * speed)
+
+        if bv and bv.Parent then
+            local current = bv.Velocity
+            local lerpVel = current:Lerp(targetVel, math.clamp(10 * dt, 0, 1))
+            bv.Velocity = lerpVel
+        end
+
+        if bg and bg.Parent then
+            -- align to camera yaw for facing direction
+            local look = CFrame.new(hrp.Position, hrp.Position + Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z))
+            bg.CFrame = look
+        end
     else
-        -- Normal walking: set WalkSpeed to slider value if not deactivated
+        -- not flying: ensure flight objects removed and WalkSpeed applied
+        if bv or bg then cleanupFlyObjects() end
         if not deactivated then
             local val = speedRow.Value or GAME_DEFAULT_WALKSPEED
             hum.WalkSpeed = math.clamp(val, 0, MAX_VALUE)
@@ -453,8 +498,20 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
--- live updating of number when slider is moved (already handled in enableSliderDrag)
--- Toggle helpers
+-- Revert visibility depends on Fly ON (and swapMode must allow showing buttons)
+local function updateRevertVisibility()
+    if swapMode then
+        -- swapMode shows the buttons area, so revert visible if fly enabled
+        revertBtn.Visible = flyEnabled
+        deactivateBtn.Visible = true
+    else
+        -- swapMode false: invite shown, hide buttons
+        revertBtn.Visible = false
+        deactivateBtn.Visible = false
+    end
+end
+
+-- Toggle functions
 local function setNoclip(on)
     noclipEnabled = on
     noclipSquir.Text = on and "ON" or "OFF"
@@ -466,52 +523,74 @@ local function setFly(on)
     flyEnabled = on
     flySquir.Text = on and "ON" or "OFF"
     speedRow.Row.Visible = on
+    updateRevertVisibility()
     if deactivated then
-        -- if deactivated, just show/hide slider UI; don't change humanoid state
+        -- while deactivated do not create fly objects
+        if not on then cleanupFlyObjects() end
         return
     end
-    enableFly(on)
+    if on then
+        enableFlyObjects(true)
+    else
+        enableFlyObjects(false)
+    end
 end
 
--- Make squircles clickable toggles (primary toggles per your request)
 noclipSquir.MouseButton1Click:Connect(function() setNoclip(not noclipEnabled) end)
 flySquir.MouseButton1Click:Connect(function() setFly(not flyEnabled) end)
 
--- Also allow clicking the left label to toggle (optional convenience) — doesn't change that squircles are main toggles
-noclipLabel.InputBegan:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then setNoclip(not noclipEnabled) end end)
-flyLabel.InputBegan:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then setFly(not flyEnabled) end end)
-
--- Deactivate toggle (same behavior as before)
+-- Deactivate toggle
 deactivateBtn.MouseButton1Click:Connect(function()
     deactivated = not deactivated
     if deactivated then
         deactivateBtn.Text = "Activate"
         darkOverlay.Visible = true
         resetReminder.Visible = true
+        -- when deactivated, cleanup fly objects to avoid interference
+        cleanupFlyObjects()
     else
         deactivateBtn.Text = "Deactivate"
         darkOverlay.Visible = false
         resetReminder.Visible = false
-        -- when reactivated, re-apply states
-        if flyEnabled then enableFly(true) end
+        if flyEnabled then enableFlyObjects(true) end
         if noclipEnabled then enableNoclip(true) end
     end
 end)
 
--- Revert sets slider back to game's default WalkSpeed (captured)
+-- Revert: set slider back to game's default WalkSpeed (captured)
 revertBtn.MouseButton1Click:Connect(function()
     local default = GAME_DEFAULT_WALKSPEED or 16
     speedRow.Value = default
     speedRow.SavedValue = default
     speedRow.Fill.Size = UDim2.new(default / MAX_VALUE, 0, 1, 0)
     speedRow.Knob.Position = UDim2.new(default / MAX_VALUE, 0, 0.5, 0)
-    speedRow.ValueBox.Text = formatNumber(default)
-    fitTextToBox(speedRow.ValueBox, speedRow.ValueBox.Text)
-    -- apply immediately if not deactivated and not flying (walking)
+    speedRow.ValueBox.Text = tostring(default)
+    -- apply immediately if not deactivated and not flying
     if not deactivated and not flyEnabled then
         local char = player.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then hum.WalkSpeed = math.clamp(default, 0, MAX_VALUE) end
+    end
+end)
+
+-- Swap button toggles showing invite <-> showing buttons (Deactivate + Revert)
+swapBtn.MouseButton1Click:Connect(function()
+    swapMode = not swapMode
+    if swapMode then
+        inviteBox.Visible = false
+        -- show deactivate and revert area (revert depends on fly)
+        deactivateBtn.Visible = true
+        revertBtn.Visible = flyEnabled
+    else
+        inviteBox.Visible = true
+        deactivateBtn.Visible = false
+        revertBtn.Visible = false
+    end
+    -- keep resetReminder visibility consistent
+    if deactivated and swapMode then
+        resetReminder.Visible = true
+    else
+        resetReminder.Visible = false
     end
 end)
 
@@ -520,7 +599,8 @@ local minimized = false
 minBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     controlsFrame.Visible = not minimized
-    inviteBox.Visible = not minimized
+    inviteBox.Visible = not minimized and (not swapMode)
+    swapBtn.Visible = not minimized
     if minimized then
         resetReminder.Visible = false
         mainFrame.Size = UDim2.new(0, FRAME_W, 0, 36)
@@ -531,8 +611,9 @@ minBtn.MouseButton1Click:Connect(function()
         mainFrame.Size = UDim2.new(0, FRAME_W, 0, FRAME_H)
         dragSticker.Parent = mainFrame
         dragSticker.Position = originalStickerPos
-        if deactivated then resetReminder.Visible = true end
+        if deactivated and swapMode then resetReminder.Visible = true end
     end
+    updateSwapPosition()
 end)
 closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
@@ -541,7 +622,6 @@ local defaultsCaptured = false
 local function onCharacterAdded(char)
     local hum = char:WaitForChild("Humanoid", 5)
     if hum then
-        -- capture WalkSpeed as game default on first spawn
         if not defaultsCaptured then
             GAME_DEFAULT_WALKSPEED = hum.WalkSpeed or GAME_DEFAULT_WALKSPEED
             defaultsCaptured = true
@@ -549,27 +629,27 @@ local function onCharacterAdded(char)
             speedRow.SavedValue = GAME_DEFAULT_WALKSPEED
             speedRow.Fill.Size = UDim2.new(speedRow.Value / MAX_VALUE, 0, 1, 0)
             speedRow.Knob.Position = UDim2.new(speedRow.Value / MAX_VALUE, 0, 0.5, 0)
-            speedRow.ValueBox.Text = formatNumber(speedRow.Value)
-            fitTextToBox(speedRow.ValueBox, speedRow.ValueBox.Text)
+            speedRow.ValueBox.Text = tostring(speedRow.Value)
         end
     end
     -- ensure toggles off on spawn
     setFly(false)
     setNoclip(false)
+    cleanupFlyObjects()
 end
 
 if player.Character then onCharacterAdded(player.Character) end
 player.CharacterAdded:Connect(onCharacterAdded)
 
--- applyValues loop (keeps humanoid WalkSpeed synced when not flying)
+-- Apply values (keeps WalkSpeed in sync when not flying)
 spawn(function()
     while screenGui.Parent do
         pcall(function()
-            if deactivated then return end
+            if deactivated then wait(0.04); return end
             local char = player.Character
-            if not char then return end
+            if not char then wait(0.04); return end
             local hum = char:FindFirstChildOfClass("Humanoid")
-            if not hum then return end
+            if not hum then wait(0.04); return end
             if not flyEnabled then
                 local val = speedRow.Value or GAME_DEFAULT_WALKSPEED
                 hum.WalkSpeed = math.clamp(val, 0, MAX_VALUE)
@@ -579,11 +659,12 @@ spawn(function()
     end
 end)
 
--- Keep GUI inside screen bounds
+-- Keep GUI inside screen bounds and update swap button position
 RunService:BindToRenderStep("ClampGUIPosition", Enum.RenderPriority.Camera.Value + 1, function()
     local pos = mainFrame.AbsolutePosition
     local nx, ny = clampPositionToScreen(pos.X, pos.Y)
     if nx ~= pos.X or ny ~= pos.Y then mainFrame.Position = UDim2.new(0, nx, 0, ny) end
+    updateSwapPosition()
     if dragSticker.Parent == screenGui then
         local sx = mainFrame.AbsolutePosition.X + mainFrame.AbsoluteSize.X - 34
         local sy = mainFrame.AbsolutePosition.Y + mainFrame.AbsoluteSize.Y + 6
