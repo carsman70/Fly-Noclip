@@ -1,6 +1,6 @@
--- ScriptBlock — Fly + Noclip (noclip interval reduced + best-effort anti-teleport)
--- Changes: noclip loop interval -> 0.03s; added BodyVelocity nudge & stronger CanCollide enforcement
--- NOTE: This is client-side only. Servers with strict authority can still correct player position.
+-- ScriptBlock — Fly + Noclip (anti-teleport removed; noclip loop kept at 0.03s)
+-- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
+-- Change: removed anti-teleport BV + CFrame nudging; kept fast noclip re-application.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -394,13 +394,10 @@ local function cleanupFlyObjects()
     end
 end
 
--- ----------------------------
--- N O C L I P   U P G R A D E S
--- ----------------------------
+-- Reliable noclip loop handling (anti-teleport removed)
 local noclipLoopRunning = false
 local noclipSavedState = false
-local noclipBV = nil    -- BodyVelocity used to nudge player through geometry
-local NOCOLLIC_INTERVAL = 0.03 -- reduced interval (fast but light)
+local NOCOLLIC_INTERVAL = 0.03 -- fast re-application
 
 local function setCharacterNoclip(char, on)
     if not char then return end
@@ -411,25 +408,6 @@ local function setCharacterNoclip(char, on)
     end
 end
 
-local function createOrUpdateNoclipBV(hrp, desiredVel)
-    if not hrp then return end
-    if not noclipBV or not noclipBV.Parent then
-        noclipBV = Instance.new("BodyVelocity")
-        noclipBV.Name = "ScriptBlock_NoclipBV"
-        noclipBV.MaxForce = Vector3.new(9e9,9e9,9e9)
-        noclipBV.P = 1e4
-        noclipBV.Parent = hrp
-    end
-    noclipBV.Velocity = desiredVel or Vector3.new(0,0,0)
-end
-
-local function destroyNoclipBV()
-    if noclipBV and noclipBV.Parent then
-        pcall(function() noclipBV:Destroy() end)
-    end
-    noclipBV = nil
-end
-
 local function startNoclipLoop()
     if noclipLoopRunning then return end
     noclipLoopRunning = true
@@ -438,7 +416,6 @@ local function startNoclipLoop()
             if not noclipEnabled or deactivated then
                 local c = player.Character
                 if c then setCharacterNoclip(c, false) end
-                destroyNoclipBV()
                 noclipLoopRunning = false
                 break
             end
@@ -446,32 +423,6 @@ local function startNoclipLoop()
             if c then
                 -- robustly disable collisions on every descendant
                 setCharacterNoclip(c, true)
-                -- nudge HRP so server has less chance to snap back (best-effort)
-                local hrp = c:FindFirstChild("HumanoidRootPart")
-                local hum = c:FindFirstChildOfClass("Humanoid")
-                if hrp and hum then
-                    -- compute desired velocity from input (works for keyboard & mobile moveDirection)
-                    local moveDir = hum.MoveDirection or Vector3.new(0,0,0)
-                    local speed = math.clamp(speedRow.Value or GAME_DEFAULT_WALKSPEED, 0, MAX_VALUE)
-                    -- scale a bit higher for noclip movement so you pass through things reliably
-                    local desiredVel = moveDir * math.max(speed, 16) * 1.2
-                    -- small vertical assist using camera look when pressing forward (so you can move up/down by looking)
-                    local cam = workspace.CurrentCamera
-                    if cam and moveDir.Magnitude > 0.001 then
-                        local look = cam.CFrame.LookVector
-                        -- add a fraction of camera Y so looking up/forward helps ascend
-                        desiredVel = desiredVel + Vector3.new(0, look.Y * speed * 0.6, 0)
-                    end
-                    createOrUpdateNoclipBV(hrp, desiredVel)
-                    -- also try to gently re-set CFrame if server tries to correct you: (best-effort)
-                    -- compute small step in the movement direction and set CFrame to current+step
-                    if moveDir.Magnitude > 0.001 then
-                        local step = (moveDir.Unit * (math.max(speed,16) * NOCOLLIC_INTERVAL * 0.9))
-                        pcall(function()
-                            hrp.CFrame = hrp.CFrame + step
-                        end)
-                    end
-                end
             end
             wait(NOCOLLIC_INTERVAL)
         end
@@ -480,7 +431,6 @@ end
 
 local function stopNoclipLoop()
     noclipLoopRunning = false
-    destroyNoclipBV()
     local c = player.Character
     if c then setCharacterNoclip(c, false) end
 end
@@ -499,9 +449,6 @@ local function enableNoclip(enable)
     end
 end
 
--- ----------------------------
--- F L I G H T   C O D E (unchanged)
--- ----------------------------
 local function enableFlyObjects(enable)
     local char = player.Character
     if not char then return end
@@ -619,7 +566,6 @@ end
 noclipSquir.MouseButton1Click:Connect(function() setNoclip(not noclipEnabled) end)
 flySquir.MouseButton1Click:Connect(function() setFly(not flyEnabled) end)
 
--- Deactivate toggles: revert WalkSpeed, disable noclip, restore on reactivate
 deactivateBtn.MouseButton1Click:Connect(function()
     deactivated = not deactivated
     if deactivated then
