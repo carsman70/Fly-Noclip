@@ -1,12 +1,24 @@
--- ScriptBlock — Fly + Noclip - noclip loop at 0.03s)
+-- ScriptBlock — Fly + Noclip (anti-teleport & jitter removed; noclip loop at 0.03s)
+-- + IMMEDIATE CLEANUP: destroys any stray BodyVelocity/BodyGyro on the character at load
+-- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
+local workspace = workspace
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+
+-- IMMEDIATE CLEANUP: remove any stray BodyVelocity / BodyGyro left in the character right now
+if player.Character then
+    for _,v in ipairs(player.Character:GetDescendants()) do
+        if v:IsA("BodyVelocity") or v:IsA("BodyGyro") then
+            pcall(function() v:Destroy() end)
+        end
+    end
+end
 
 local GAME_DEFAULT_WALKSPEED = 16
 local MAX_VALUE = 1000
