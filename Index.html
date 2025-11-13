@@ -1,11 +1,9 @@
--- ScriptBlock — Fly + Noclip (noclip jitter fix: conditional gentle BV while intersecting)
--- CHANGE: noclip loop now detects when HRP intersects world parts and applies a small, temporary BodyVelocity to smooth movement through geometry.
+-- ScriptBlock — Fly + Noclip - noclip loop at 0.03s)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
-local workspace = workspace
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -394,11 +392,10 @@ local function cleanupFlyObjects()
     end
 end
 
--- Reliable noclip loop handling (with conditional smoothing BV while intersecting world parts)
+-- Reliable noclip loop handling (anti-teleport & jitter removed)
 local noclipLoopRunning = false
 local noclipSavedState = false
 local NOCOLLIC_INTERVAL = 0.03 -- fast re-application
-local noclipAssistBV = nil -- gentle BV created only when HRP intersects world parts
 
 local function setCharacterNoclip(char, on)
     if not char then return end
@@ -409,30 +406,6 @@ local function setCharacterNoclip(char, on)
     end
 end
 
-local function destroyNoclipAssistBV()
-    if noclipAssistBV and noclipAssistBV.Parent then
-        pcall(function() noclipAssistBV:Destroy() end)
-    end
-    noclipAssistBV = nil
-end
-
--- small helper: returns true if HRP overlaps any non-character, collidable part nearby
-local function hrpIsOverlappingWorld(hrp)
-    if not hrp then return false end
-    local size = hrp.Size + Vector3.new(0.5,0.5,0.5)
-    local ok, parts = pcall(function()
-        return workspace:GetPartBoundsInBox(hrp.CFrame, size)
-    end)
-    if not ok or not parts then return false end
-    for _, p in ipairs(parts) do
-        if p and p:IsA("BasePart") and p.CanCollide and not p:IsDescendantOf(hrp.Parent) then
-            -- ignore things with very small overlap (optional), but generally treat as overlap
-            return true
-        end
-    end
-    return false
-end
-
 local function startNoclipLoop()
     if noclipLoopRunning then return end
     noclipLoopRunning = true
@@ -441,46 +414,13 @@ local function startNoclipLoop()
             if not noclipEnabled or deactivated then
                 local c = player.Character
                 if c then setCharacterNoclip(c, false) end
-                destroyNoclipAssistBV()
                 noclipLoopRunning = false
                 break
             end
             local c = player.Character
             if c then
+                -- robustly disable collisions on every descendant
                 setCharacterNoclip(c, true)
-                local hrp = c:FindFirstChild("HumanoidRootPart")
-                local hum = c:FindFirstChildOfClass("Humanoid")
-                if hrp and hum then
-                    -- check if HRP is overlapping any world parts; if so, apply a gentle BV to smooth through
-                    local overlapping = hrpIsOverlappingWorld(hrp)
-                    if overlapping then
-                        if not noclipAssistBV or not noclipAssistBV.Parent then
-                            noclipAssistBV = Instance.new("BodyVelocity")
-                            noclipAssistBV.Name = "ScriptBlock_NoclipAssistBV"
-                            -- moderate force so it helps smoothing but is not an aggressive anti-teleport
-                            noclipAssistBV.MaxForce = Vector3.new(5e4,5e4,5e4)
-                            noclipAssistBV.P = 2e3
-                            noclipAssistBV.Parent = hrp
-                        end
-                        local moveDir = hum.MoveDirection or Vector3.new(0,0,0)
-                        local speed = math.clamp(speedRow.Value or GAME_DEFAULT_WALKSPEED, 0, MAX_VALUE)
-                        local desiredVel = moveDir * math.max(speed, 16) * 1.1
-                        -- small vertical assist using camera look helps when moving diagonally through geometry
-                        local cam = workspace.CurrentCamera
-                        if cam and moveDir.Magnitude > 0.001 then
-                            local look = cam.CFrame.LookVector
-                            desiredVel = desiredVel + Vector3.new(0, look.Y * speed * 0.35, 0)
-                        end
-                        pcall(function() noclipAssistBV.Velocity = desiredVel end)
-                    else
-                        -- not overlapping: remove the assist BV to avoid interfering with normal movement
-                        destroyNoclipAssistBV()
-                    end
-                else
-                    destroyNoclipAssistBV()
-                end
-            else
-                destroyNoclipAssistBV()
             end
             wait(NOCOLLIC_INTERVAL)
         end
@@ -489,7 +429,6 @@ end
 
 local function stopNoclipLoop()
     noclipLoopRunning = false
-    destroyNoclipAssistBV()
     local c = player.Character
     if c then setCharacterNoclip(c, false) end
 end
@@ -498,6 +437,7 @@ local function enableNoclip(enable)
     noclipEnabled = enable
     noclipSquir.Text = enable and "ON" or "OFF"
     if deactivated then
+        -- save desired state for restore on reactivate
         return
     end
     if enable then
