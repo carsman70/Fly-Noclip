@@ -1,11 +1,12 @@
--- ScriptBlock — Fly + Noclip (startup-grace: avoids touching physics for 0.7s after character spawn)
+-- ScriptBlock — Fly + Noclip (startup guard + immediate cleanup to prevent nudging)
 -- Paste into StarterPlayer > StarterPlayerScripts (replace existing LocalScript)
--- CHANGE: small initialization guard added (0.7s) to avoid nudging on script load. No other changes.
+-- Changes: (1) Heartbeat returns while initializing, (2) immediate destruction of stray BV/BG & stop noclip on character spawn.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
+local workspace = workspace
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -473,7 +474,13 @@ local function enableFlyObjects(enable)
     pcall(function() hum.PlatformStand = true end)
 end
 
+-- NEW: initialization guard
+local initializing = false
+
 RunService.Heartbeat:Connect(function(dt)
+    -- do not touch physics while initialization guard is active
+    if initializing then return end
+
     if deactivated then
         if bv then bv.Velocity = Vector3.new(0,0,0) end
         return
@@ -651,11 +658,27 @@ minBtn.MouseButton1Click:Connect(function()
 end)
 closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
--- NEW: initialization guard to avoid touching character physics immediately on spawn
-local initializing = false
+-- Immediate cleanup helper to remove stray BV/BG and stop noclip right away (no delay)
+local function immediateCharacterCleanup(char)
+    if not char then return end
+    -- destroy any BodyVelocity / BodyGyro that might exist (from previous runs or other scripts)
+    for _,v in ipairs(char:GetDescendants()) do
+        if v:IsA("BodyVelocity") or v:IsA("BodyGyro") then
+            pcall(function() v:Destroy() end)
+        end
+    end
+    -- ensure platform stand is off
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then pcall(function() hum.PlatformStand = false end) end
+    -- stop noclip loop immediately (we'll restart after init if needed)
+    stopNoclipLoop()
+end
 
 local defaultsCaptured = false
 local function onCharacterAdded(char)
+    -- immediate cleanup: remove any stray physics objects that could cause nudging
+    immediateCharacterCleanup(char)
+
     initializing = true
     local hum = char:WaitForChild("Humanoid", 5)
     if hum then
@@ -671,7 +694,6 @@ local function onCharacterAdded(char)
     end
 
     -- wait briefly while the character settles, then continue with the usual setup.
-    -- this prevents immediate physics touches that can cause vertical nudging on some games.
     delay(0.7, function()
         -- resume the normal behavior after the small grace period
         setFly(false)
@@ -688,7 +710,7 @@ end
 if player.Character then onCharacterAdded(player.Character) end
 player.CharacterAdded:Connect(onCharacterAdded)
 
--- Make the background WalkSpeed maintenance loop respect initialization so it doesn't touch physics immediately.
+-- background walk speed maintenance respects initialization
 spawn(function()
     while screenGui.Parent do
         pcall(function()
