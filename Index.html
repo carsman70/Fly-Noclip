@@ -1,4 +1,6 @@
--- ScriptBlock — Fly + Noclip - noclip loop kept at 0.03s)
+-- ScriptBlock — Fly + Noclip (startup-grace: avoids touching physics for 0.7s after character spawn)
+-- Paste into StarterPlayer > StarterPlayerScripts (replace existing LocalScript)
+-- CHANGE: small initialization guard added (0.7s) to avoid nudging on script load. No other changes.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -392,7 +394,7 @@ local function cleanupFlyObjects()
     end
 end
 
--- Reliable noclip loop handling (anti-teleport removed)
+-- Reliable noclip loop handling (anti-teleport & jitter removed)
 local noclipLoopRunning = false
 local noclipSavedState = false
 local NOCOLLIC_INTERVAL = 0.03 -- fast re-application
@@ -649,8 +651,12 @@ minBtn.MouseButton1Click:Connect(function()
 end)
 closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
+-- NEW: initialization guard to avoid touching character physics immediately on spawn
+local initializing = false
+
 local defaultsCaptured = false
 local function onCharacterAdded(char)
+    initializing = true
     local hum = char:WaitForChild("Humanoid", 5)
     if hum then
         if not defaultsCaptured then
@@ -663,22 +669,30 @@ local function onCharacterAdded(char)
             speedRow.ValueBox.Text = tostring(speedRow.Value)
         end
     end
-    setFly(false)
-    if noclipEnabled and not deactivated then
-        startNoclipLoop()
-    else
-        stopNoclipLoop()
-    end
-    cleanupFlyObjects()
+
+    -- wait briefly while the character settles, then continue with the usual setup.
+    -- this prevents immediate physics touches that can cause vertical nudging on some games.
+    delay(0.7, function()
+        -- resume the normal behavior after the small grace period
+        setFly(false)
+        if noclipEnabled and not deactivated then
+            startNoclipLoop()
+        else
+            stopNoclipLoop()
+        end
+        cleanupFlyObjects()
+        initializing = false
+    end)
 end
 
 if player.Character then onCharacterAdded(player.Character) end
 player.CharacterAdded:Connect(onCharacterAdded)
 
+-- Make the background WalkSpeed maintenance loop respect initialization so it doesn't touch physics immediately.
 spawn(function()
     while screenGui.Parent do
         pcall(function()
-            if deactivated then wait(0.04); return end
+            if deactivated or initializing then wait(0.04); return end
             local char = player.Character
             if not char then wait(0.04); return end
             local hum = char:FindFirstChildOfClass("Humanoid")
