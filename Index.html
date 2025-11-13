@@ -1,6 +1,6 @@
--- ScriptBlock — Fly + Noclip (behavior changes: revert walk speed, deactivate behavior, persistent noclip loop)
--- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
--- Only changes: when fly off revert to game default WalkSpeed; deactivate reverts WalkSpeed & disables noclip until reactivate (restores previous); noclip loop repeats every 0.1s to ensure consistent CanCollide off.
+-- ScriptBlock — Fly + Noclip (noclip interval reduced + best-effort anti-teleport)
+-- Changes: noclip loop interval -> 0.03s; added BodyVelocity nudge & stronger CanCollide enforcement
+-- NOTE: This is client-side only. Servers with strict authority can still correct player position.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -390,14 +390,17 @@ local function cleanupFlyObjects()
     if hum then
         pcall(function() hum.PlatformStand = false end)
         pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
-        -- set WalkSpeed back to game default when flight objects are cleaned
         pcall(function() hum.WalkSpeed = GAME_DEFAULT_WALKSPEED end)
     end
 end
 
--- Reliable noclip loop handling
+-- ----------------------------
+-- N O C L I P   U P G R A D E S
+-- ----------------------------
 local noclipLoopRunning = false
-local noclipSavedState = false -- used to restore after deactivate
+local noclipSavedState = false
+local noclipBV = nil    -- BodyVelocity used to nudge player through geometry
+local NOCOLLIC_INTERVAL = 0.03 -- reduced interval (fast but light)
 
 local function setCharacterNoclip(char, on)
     if not char then return end
@@ -408,30 +411,76 @@ local function setCharacterNoclip(char, on)
     end
 end
 
+local function createOrUpdateNoclipBV(hrp, desiredVel)
+    if not hrp then return end
+    if not noclipBV or not noclipBV.Parent then
+        noclipBV = Instance.new("BodyVelocity")
+        noclipBV.Name = "ScriptBlock_NoclipBV"
+        noclipBV.MaxForce = Vector3.new(9e9,9e9,9e9)
+        noclipBV.P = 1e4
+        noclipBV.Parent = hrp
+    end
+    noclipBV.Velocity = desiredVel or Vector3.new(0,0,0)
+end
+
+local function destroyNoclipBV()
+    if noclipBV and noclipBV.Parent then
+        pcall(function() noclipBV:Destroy() end)
+    end
+    noclipBV = nil
+end
+
 local function startNoclipLoop()
     if noclipLoopRunning then return end
     noclipLoopRunning = true
     spawn(function()
         while noclipLoopRunning do
             if not noclipEnabled or deactivated then
-                -- if noclip not wanted or script deactivated, ensure collisions restored then stop loop
                 local c = player.Character
                 if c then setCharacterNoclip(c, false) end
+                destroyNoclipBV()
                 noclipLoopRunning = false
                 break
             end
             local c = player.Character
             if c then
-                -- force-disable collisions robustly
+                -- robustly disable collisions on every descendant
                 setCharacterNoclip(c, true)
+                -- nudge HRP so server has less chance to snap back (best-effort)
+                local hrp = c:FindFirstChild("HumanoidRootPart")
+                local hum = c:FindFirstChildOfClass("Humanoid")
+                if hrp and hum then
+                    -- compute desired velocity from input (works for keyboard & mobile moveDirection)
+                    local moveDir = hum.MoveDirection or Vector3.new(0,0,0)
+                    local speed = math.clamp(speedRow.Value or GAME_DEFAULT_WALKSPEED, 0, MAX_VALUE)
+                    -- scale a bit higher for noclip movement so you pass through things reliably
+                    local desiredVel = moveDir * math.max(speed, 16) * 1.2
+                    -- small vertical assist using camera look when pressing forward (so you can move up/down by looking)
+                    local cam = workspace.CurrentCamera
+                    if cam and moveDir.Magnitude > 0.001 then
+                        local look = cam.CFrame.LookVector
+                        -- add a fraction of camera Y so looking up/forward helps ascend
+                        desiredVel = desiredVel + Vector3.new(0, look.Y * speed * 0.6, 0)
+                    end
+                    createOrUpdateNoclipBV(hrp, desiredVel)
+                    -- also try to gently re-set CFrame if server tries to correct you: (best-effort)
+                    -- compute small step in the movement direction and set CFrame to current+step
+                    if moveDir.Magnitude > 0.001 then
+                        local step = (moveDir.Unit * (math.max(speed,16) * NOCOLLIC_INTERVAL * 0.9))
+                        pcall(function()
+                            hrp.CFrame = hrp.CFrame + step
+                        end)
+                    end
+                end
             end
-            wait(0.1)
+            wait(NOCOLLIC_INTERVAL)
         end
     end)
 end
 
 local function stopNoclipLoop()
     noclipLoopRunning = false
+    destroyNoclipBV()
     local c = player.Character
     if c then setCharacterNoclip(c, false) end
 end
@@ -440,7 +489,7 @@ local function enableNoclip(enable)
     noclipEnabled = enable
     noclipSquir.Text = enable and "ON" or "OFF"
     if deactivated then
-        -- don't apply noclip while deactivated; save desired state to restore on reactivate
+        -- save desired state for restore on reactivate
         return
     end
     if enable then
@@ -450,6 +499,9 @@ local function enableNoclip(enable)
     end
 end
 
+-- ----------------------------
+-- F L I G H T   C O D E (unchanged)
+-- ----------------------------
 local function enableFlyObjects(enable)
     local char = player.Character
     if not char then return end
@@ -474,7 +526,6 @@ local function enableFlyObjects(enable)
     pcall(function() hum.PlatformStand = true end)
 end
 
--- flight loop (camera-follow responsive version kept as before)
 RunService.Heartbeat:Connect(function(dt)
     if deactivated then
         if bv then bv.Velocity = Vector3.new(0,0,0) end
@@ -526,7 +577,6 @@ RunService.Heartbeat:Connect(function(dt)
     else
         if bv or bg then cleanupFlyObjects() end
         if not deactivated then
-            -- when fly OFF and script active: revert WalkSpeed to game default (so running unaffected by slider)
             local val = GAME_DEFAULT_WALKSPEED
             hum.WalkSpeed = math.clamp(val, 0, MAX_VALUE)
         end
@@ -544,7 +594,6 @@ local function updateRevertVisibility()
 end
 
 local function setNoclip(on)
-    -- wrapper to coordinate saved state vs actual applying (use enableNoclip to manage loop)
     enableNoclip(on)
 end
 
@@ -554,14 +603,12 @@ local function setFly(on)
     speedRow.Row.Visible = on
     updateRevertVisibility()
     if deactivated then
-        -- when deactivated do not enable fly objects; but keep the UI state
         if not on then cleanupFlyObjects() end
         return
     end
     if on then
         enableFlyObjects(true)
     else
-        -- when fly turned OFF: cleanup and revert WalkSpeed to game default
         enableFlyObjects(false)
         local char = player.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -572,7 +619,7 @@ end
 noclipSquir.MouseButton1Click:Connect(function() setNoclip(not noclipEnabled) end)
 flySquir.MouseButton1Click:Connect(function() setFly(not flyEnabled) end)
 
--- Deactivate toggle: revert speed to game default, disable noclip until reactivation, and restore previous noclip on reactivate
+-- Deactivate toggles: revert WalkSpeed, disable noclip, restore on reactivate
 deactivateBtn.MouseButton1Click:Connect(function()
     deactivated = not deactivated
     if deactivated then
@@ -580,31 +627,26 @@ deactivateBtn.MouseButton1Click:Connect(function()
         darkOverlay.Visible = true
         resetReminder.Visible = true
         swapBtn.Visible = false
-        -- revert walk speed so game has control
         local char = player.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then pcall(function() hum.WalkSpeed = GAME_DEFAULT_WALKSPEED end) end
-        -- save noclip desired state and turn noclip OFF while deactivated
         noclipSavedState = noclipEnabled
         if noclipEnabled then
             noclipEnabled = false
             stopNoclipLoop()
             noclipSquir.Text = "OFF"
         end
-        -- remove flight objects
         cleanupFlyObjects()
     else
         deactivateBtn.Text = "Deactivate"
         darkOverlay.Visible = false
         resetReminder.Visible = false
         swapBtn.Visible = true
-        -- restore noclip to previous saved state
         if noclipSavedState then
             noclipEnabled = true
             noclipSquir.Text = "ON"
             startNoclipLoop()
         end
-        -- if fly toggle was on before, restore flight objects
         if flyEnabled then enableFlyObjects(true) end
     end
 end)
@@ -677,9 +719,7 @@ local function onCharacterAdded(char)
             speedRow.ValueBox.Text = tostring(speedRow.Value)
         end
     end
-    -- ensure toggles off on spawn and clean up flight objects
     setFly(false)
-    -- restore noclip according to saved state (when respawning while script active)
     if noclipEnabled and not deactivated then
         startNoclipLoop()
     else
@@ -700,7 +740,6 @@ spawn(function()
             local hum = char:FindFirstChildOfClass("Humanoid")
             if not hum then wait(0.04); return end
             if not flyEnabled then
-                -- while not flying and script active: ensure WalkSpeed is the game's default
                 hum.WalkSpeed = GAME_DEFAULT_WALKSPEED
             end
         end)
