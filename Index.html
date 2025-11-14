@@ -1,6 +1,6 @@
--- ScriptBlock — Fly + Noclip (replaced noclip with one-shot function you provided)
+-- ScriptBlock — Fly + Noclip
+-- Changes made: (1) noclip re-applies every 0.03s (loop), (2) removed body rotation (BodyGyro) so character no longer faces camera.
 -- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
--- ONLY change: noclip now uses the one-shot function supplied by user (no repeated loop).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -379,12 +379,11 @@ local noclipEnabled = false
 local deactivated = false
 local swapMode = false
 
-local bv, bg
+local bv -- removed bg: no BodyGyro any more
 
 local function cleanupFlyObjects()
     if bv and bv.Parent then pcall(function() bv:Destroy() end) end
-    if bg and bg.Parent then pcall(function() bg:Destroy() end) end
-    bv, bg = nil, nil
+    bv = nil
     local char = player.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then
@@ -394,27 +393,44 @@ local function cleanupFlyObjects()
     end
 end
 
---  >>> REPLACED Noclip SECTION (one-shot function from user) <<<
+-- Noclip loop: re-apply CanCollide = false every 0.03s
+local noclipLoopRunning = false
 local noclipSavedState = false
+local NOCOLLIC_INTERVAL = 0.03
 
-local function Noclip()
-    local plr = player
-    if not plr or not plr.Character then return end
-    for i, v in pairs(plr.Character:GetDescendants()) do
-        if v:IsA("BasePart") and v.CanCollide == true then
-            pcall(function() v.CanCollide = false end)
+local function setCharacterNoclip(char, on)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            pcall(function() part.CanCollide = not on end)
         end
     end
 end
 
-local function RestoreCollisions()
-    local plr = player
-    if not plr or not plr.Character then return end
-    for i, v in pairs(plr.Character:GetDescendants()) do
-        if v:IsA("BasePart") and v.CanCollide == false then
-            pcall(function() v.CanCollide = true end)
+local function startNoclipLoop()
+    if noclipLoopRunning then return end
+    noclipLoopRunning = true
+    spawn(function()
+        while noclipLoopRunning do
+            if not noclipEnabled or deactivated then
+                local c = player.Character
+                if c then setCharacterNoclip(c, false) end
+                noclipLoopRunning = false
+                break
+            end
+            local c = player.Character
+            if c then
+                setCharacterNoclip(c, true)
+            end
+            wait(NOCOLLIC_INTERVAL)
         end
-    end
+    end)
+end
+
+local function stopNoclipLoop()
+    noclipLoopRunning = false
+    local c = player.Character
+    if c then setCharacterNoclip(c, false) end
 end
 
 local function enableNoclip(enable)
@@ -425,12 +441,11 @@ local function enableNoclip(enable)
         return
     end
     if enable then
-        Noclip()
+        startNoclipLoop()
     else
-        RestoreCollisions()
+        stopNoclipLoop()
     end
 end
---  <<< end replaced noclip section >>>
 
 local function enableFlyObjects(enable)
     local char = player.Character
@@ -448,11 +463,7 @@ local function enableFlyObjects(enable)
     bv.Velocity = Vector3.new(0,0,0)
     bv.P = 9e4
     bv.Parent = hrp
-    bg = Instance.new("BodyGyro")
-    bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
-    bg.P = 9e4
-    bg.CFrame = hrp.CFrame
-    bg.Parent = hrp
+    -- NOTE: BodyGyro removed per request (no automatic body rotation)
     pcall(function() hum.PlatformStand = true end)
 end
 
@@ -468,7 +479,7 @@ RunService.Heartbeat:Connect(function(dt)
     local cam = workspace.CurrentCamera
     if not hrp or not hum or not cam then return end
     if flyEnabled then
-        if not bv or not bg or not bv.Parent then
+        if not bv or not bv.Parent then
             enableFlyObjects(true)
         end
         local camC = cam.CFrame
@@ -497,15 +508,10 @@ RunService.Heartbeat:Connect(function(dt)
                 local lerpVel = current:Lerp(targetVel, math.clamp(30 * dt, 0, 1))
                 bv.Velocity = lerpVel
             end
-            if bg and bg.Parent then
-                local yawLook = Vector3.new(camLook.X, 0, camLook.Z)
-                if yawLook.Magnitude < 1e-6 then yawLook = Vector3.new(0,0,1) end
-                local look = CFrame.new(hrp.Position, hrp.Position + yawLook)
-                bg.CFrame = look
-            end
+            -- Body rotation removed: no bg.CFrame updates
         end
     else
-        if bv or bg then cleanupFlyObjects() end
+        if bv then cleanupFlyObjects() end
         if not deactivated then
             local val = GAME_DEFAULT_WALKSPEED
             hum.WalkSpeed = math.clamp(val, 0, MAX_VALUE)
@@ -562,8 +568,8 @@ deactivateBtn.MouseButton1Click:Connect(function()
         noclipSavedState = noclipEnabled
         if noclipEnabled then
             noclipEnabled = false
-            -- stop noclip by restoring collisions
-            RestoreCollisions()
+            -- stop noclip loop and restore collisions
+            stopNoclipLoop()
             noclipSquir.Text = "OFF"
         end
         cleanupFlyObjects()
@@ -575,7 +581,7 @@ deactivateBtn.MouseButton1Click:Connect(function()
         if noclipSavedState then
             noclipEnabled = true
             noclipSquir.Text = "ON"
-            Noclip()
+            startNoclipLoop()
         end
         if flyEnabled then enableFlyObjects(true) end
     end
@@ -651,9 +657,9 @@ local function onCharacterAdded(char)
     end
     setFly(false)
     if noclipEnabled and not deactivated then
-        Noclip()
+        startNoclipLoop()
     else
-        RestoreCollisions()
+        stopNoclipLoop()
     end
     cleanupFlyObjects()
 end
