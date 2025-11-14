@@ -1,4 +1,6 @@
--- ScriptBlock — Fly + Noclip - noclip loop at 0.03s)
+-- ScriptBlock — Fly + Noclip (replaced noclip with one-shot function you provided)
+-- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
+-- ONLY change: noclip now uses the one-shot function supplied by user (no repeated loop).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -392,45 +394,27 @@ local function cleanupFlyObjects()
     end
 end
 
--- Reliable noclip loop handling (anti-teleport & jitter removed)
-local noclipLoopRunning = false
+--  >>> REPLACED Noclip SECTION (one-shot function from user) <<<
 local noclipSavedState = false
-local NOCOLLIC_INTERVAL = 0.03 -- fast re-application
 
-local function setCharacterNoclip(char, on)
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            pcall(function() part.CanCollide = not on end)
+local function Noclip()
+    local plr = player
+    if not plr or not plr.Character then return end
+    for i, v in pairs(plr.Character:GetDescendants()) do
+        if v:IsA("BasePart") and v.CanCollide == true then
+            pcall(function() v.CanCollide = false end)
         end
     end
 end
 
-local function startNoclipLoop()
-    if noclipLoopRunning then return end
-    noclipLoopRunning = true
-    spawn(function()
-        while noclipLoopRunning do
-            if not noclipEnabled or deactivated then
-                local c = player.Character
-                if c then setCharacterNoclip(c, false) end
-                noclipLoopRunning = false
-                break
-            end
-            local c = player.Character
-            if c then
-                -- robustly disable collisions on every descendant
-                setCharacterNoclip(c, true)
-            end
-            wait(NOCOLLIC_INTERVAL)
+local function RestoreCollisions()
+    local plr = player
+    if not plr or not plr.Character then return end
+    for i, v in pairs(plr.Character:GetDescendants()) do
+        if v:IsA("BasePart") and v.CanCollide == false then
+            pcall(function() v.CanCollide = true end)
         end
-    end)
-end
-
-local function stopNoclipLoop()
-    noclipLoopRunning = false
-    local c = player.Character
-    if c then setCharacterNoclip(c, false) end
+    end
 end
 
 local function enableNoclip(enable)
@@ -441,11 +425,12 @@ local function enableNoclip(enable)
         return
     end
     if enable then
-        startNoclipLoop()
+        Noclip()
     else
-        stopNoclipLoop()
+        RestoreCollisions()
     end
 end
+--  <<< end replaced noclip section >>>
 
 local function enableFlyObjects(enable)
     local char = player.Character
@@ -577,7 +562,8 @@ deactivateBtn.MouseButton1Click:Connect(function()
         noclipSavedState = noclipEnabled
         if noclipEnabled then
             noclipEnabled = false
-            stopNoclipLoop()
+            -- stop noclip by restoring collisions
+            RestoreCollisions()
             noclipSquir.Text = "OFF"
         end
         cleanupFlyObjects()
@@ -589,7 +575,7 @@ deactivateBtn.MouseButton1Click:Connect(function()
         if noclipSavedState then
             noclipEnabled = true
             noclipSquir.Text = "ON"
-            startNoclipLoop()
+            Noclip()
         end
         if flyEnabled then enableFlyObjects(true) end
     end
@@ -665,9 +651,9 @@ local function onCharacterAdded(char)
     end
     setFly(false)
     if noclipEnabled and not deactivated then
-        startNoclipLoop()
+        Noclip()
     else
-        stopNoclipLoop()
+        RestoreCollisions()
     end
     cleanupFlyObjects()
 end
