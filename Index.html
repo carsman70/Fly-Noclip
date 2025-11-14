@@ -1,7 +1,7 @@
--- ScriptBlock — noclip loop 0.3s + jump-to-object while noclip (client-side)
+-- ScriptBlock — noclip loop 0.3s (jump-teleport removed)
 -- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
--- Changes: noclip interval = 0.3s; noclip applied to all BaseParts under character; jump => teleport to object above (when noclip ON).
--- Nothing else changed.
+-- Changes: removed jump-to-object code; noclip loop remains 0.3s and applies to all BaseParts under character.
+-- Nothing else changed from previous version.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -415,7 +415,6 @@ local function applyNoclipToCharacterParts(char)
     if not char then return end
     for _, v in pairs(char:GetDescendants()) do
         if v:IsA("BasePart") then
-            -- set locally; this is still a property change on the instance (client-side attempt)
             pcall(function() v.CanCollide = false end)
         end
     end
@@ -461,54 +460,6 @@ local function enableNoclip(enable)
     end
 end
 --  <<< end noclip loop section >>>
-
--- Jump-to-object while noclip: when noclip ON and humanoid.Jumping fires, raycast upward and move HRP on top of hit
-local jumpConn = nil
-local function tryJumpToObjectAbove()
-    local char = player.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
-    -- raycast upward
-    local origin = hrp.Position
-    local maxDist = 80 -- search up to 80 studs above
-    local params = RaycastParams.new()
-    params.FilterDescendantsInstances = {char}
-    params.FilterType = Enum.RaycastFilterType.Blacklist
-    local result = workspace:Raycast(origin, Vector3.new(0, maxDist, 0), params)
-    if result and result.Instance then
-        local part = result.Instance
-        -- compute top position of the hit part (approx using size Y)
-        local topWorldY = (part.CFrame * CFrame.new(0, part.Size.Y/2, 0)).p.Y
-        local hrpHalf = (hrp.Size.Y or 2) / 2
-        local targetY = topWorldY + hrpHalf + 0.6 -- small offset so you're above it
-        local targetPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z)
-        -- place HRP directly above the part's top, preserving orientation
-        pcall(function()
-            hrp.CFrame = CFrame.new(targetPos, targetPos + workspace.CurrentCamera.CFrame.LookVector)
-        end)
-        -- if we created BodyVelocity previously for flying, zero it out briefly
-        if bv and bv.Parent then
-            pcall(function() bv.Velocity = Vector3.new(0,0,0) end)
-        end
-    end
-end
-
-local function hookJumpingForCharacter(char)
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    if jumpConn then
-        pcall(function() jumpConn:Disconnect() end)
-        jumpConn = nil
-    end
-    jumpConn = hum.Jumping:Connect(function(isActive)
-        if isActive and noclipEnabled and not deactivated then
-            tryJumpToObjectAbove()
-        end
-    end)
-end
 
 local function enableFlyObjects(enable)
     local char = player.Character
@@ -643,12 +594,7 @@ deactivateBtn.MouseButton1Click:Connect(function()
             stopNoclipLoop()
             noclipSquir.Text = "OFF"
         end
-        if flyEnabled then
-            flyEnabled = false
-            cleanupFlyObjects()
-            flySquir.Text = "OFF"
-            speedRow.Row.Visible = false
-        end
+        cleanupFlyObjects()
     else
         deactivateBtn.Text = "Deactivate"
         darkOverlay.Visible = false
@@ -738,8 +684,6 @@ local function onCharacterAdded(char)
         RestoreCollisions()
     end
     cleanupFlyObjects()
-    -- hook jump detection for this character
-    hookJumpingForCharacter(char)
 end
 
 if player.Character then onCharacterAdded(player.Character) end
