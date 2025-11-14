@@ -1,7 +1,5 @@
--- ScriptBlock — noclip (head-only) loop 0.3s, jump/teleport removed
--- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
--- Changes made: removed any jump/teleport code; noclip now targets Head + parts attached to Head (accessory handles near head).
--- Nothing else changed from the previous version except the noclip section.
+-- ScriptBlock — noclip loop 0.3s
+
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -16,9 +14,6 @@ local GAME_DEFAULT_WALKSPEED = 16
 local MAX_VALUE = 1000
 local SNAP = 5
 local DISCORD_INVITE = "https://discord.gg/ns3amh7Gg9"
-
--- (UI creation code unchanged — omitted here in comments for brevity in explanation)
--- [The full UI creation + slider + button code is the same as the prior script and is included below verbatim.]
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ScriptBlock_GUI"
@@ -399,60 +394,27 @@ local function cleanupFlyObjects()
     end
 end
 
--- >>> NOClip (HEAD-ONLY) loop 0.3s <<<
+--  >>> NOClip (LOOP 0.3s, applies to all BaseParts under character) <<<
 local noclipSavedState = false
 local NOCOLLIC_INTERVAL = 0.3
 local noclipLoopRunning = false
 
--- helper: collects head-related BaseParts (Head itself + accessory handles that are close to head)
-local function getHeadRelatedParts(char)
-    local out = {}
-    if not char then return out end
-    local head = char:FindFirstChild("Head")
-    if not head then return out end
-    -- include the Head part
-    if head:IsA("BasePart") then
-        out[head] = true
-    end
-    -- include descendants of head that are BaseParts (rare, but in case)
-    for _,d in ipairs(head:GetDescendants()) do
-        if d:IsA("BasePart") then out[d] = true end
-    end
-    -- include accessory handles that are near the head (common for hats/hair)
-    for _,obj in ipairs(char:GetChildren()) do
-        if obj:IsA("Accessory") then
-            local handle = obj:FindFirstChild("Handle")
-            if handle and handle:IsA("BasePart") and head then
-                local okStatus, dist = pcall(function() return (handle.Position - head.Position).Magnitude end)
-                if okStatus and dist and dist <= 4 then
-                    out[handle] = true
-                    -- include any BaseParts under the accessory (rare)
-                    for _,desc in ipairs(obj:GetDescendants()) do
-                        if desc:IsA("BasePart") then out[desc] = true end
-                    end
-                end
-            end
+local function RestoreCollisions()
+    local plr = player
+    if not plr or not plr.Character then return end
+    for i, v in pairs(plr.Character:GetDescendants()) do
+        if v:IsA("BasePart") and v.CanCollide == false then
+            pcall(function() v.CanCollide = true end)
         end
     end
-    -- convert set to array
-    local arr = {}
-    for k,_ in pairs(out) do table.insert(arr, k) end
-    return arr
 end
 
-local function applyNoclipToHeadParts(char)
+local function applyNoclipToCharacterParts(char)
     if not char then return end
-    local parts = getHeadRelatedParts(char)
-    for _, part in ipairs(parts) do
-        pcall(function() part.CanCollide = false end)
-    end
-end
-
-local function restoreCollisionsOnHeadParts(char)
-    if not char then return end
-    local parts = getHeadRelatedParts(char)
-    for _, part in ipairs(parts) do
-        pcall(function() part.CanCollide = true end)
+    for _, v in pairs(char:GetDescendants()) do
+        if v:IsA("BasePart") then
+            pcall(function() v.CanCollide = false end)
+        end
     end
 end
 
@@ -463,12 +425,14 @@ local function startNoclipLoop()
         while noclipLoopRunning do
             if not noclipEnabled or deactivated then
                 local c = player.Character
-                if c then restoreCollisionsOnHeadParts(c) end
+                if c then RestoreCollisions() end
                 noclipLoopRunning = false
                 break
             end
             local c = player.Character
-            if c then applyNoclipToHeadParts(c) end
+            if c then
+                applyNoclipToCharacterParts(c)
+            end
             wait(NOCOLLIC_INTERVAL)
         end
     end)
@@ -477,7 +441,7 @@ end
 local function stopNoclipLoop()
     noclipLoopRunning = false
     local c = player.Character
-    if c then restoreCollisionsOnHeadParts(c) end
+    if c then RestoreCollisions() end
 end
 
 local function enableNoclip(enable)
@@ -493,7 +457,7 @@ local function enableNoclip(enable)
         stopNoclipLoop()
     end
 end
--- <<< end noclip section >>>
+--  <<< end noclip loop section >>>
 
 local function enableFlyObjects(enable)
     local char = player.Character
@@ -628,12 +592,7 @@ deactivateBtn.MouseButton1Click:Connect(function()
             stopNoclipLoop()
             noclipSquir.Text = "OFF"
         end
-        if flyEnabled then
-            flyEnabled = false
-            cleanupFlyObjects()
-            flySquir.Text = "OFF"
-            speedRow.Row.Visible = false
-        end
+        cleanupFlyObjects()
     else
         deactivateBtn.Text = "Deactivate"
         darkOverlay.Visible = false
@@ -720,7 +679,7 @@ local function onCharacterAdded(char)
     if noclipEnabled and not deactivated then
         startNoclipLoop()
     else
-        restoreCollisionsOnHeadParts(char)
+        RestoreCollisions()
     end
     cleanupFlyObjects()
 end
