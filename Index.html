@@ -1,6 +1,6 @@
--- ScriptBlock — Fly + Noclip (replaced noclip with one-shot before; now noclip runs in a loop every 0.03s)
+-- ScriptBlock — Fly + Noclip (noclip = one-shot)
 -- Paste into StarterPlayer > StarterPlayerScripts (replace previous LocalScript)
--- ONLY change compared to the highlighted script: noclip now runs a loop re-applying CanCollide = false every 0.03s.
+-- ONLY change: noclip now runs once when toggled on (one-shot). Disable still restores collisions.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -394,11 +394,8 @@ local function cleanupFlyObjects()
     end
 end
 
---  >>> REPLACED Noclip SECTION (one-shot function from user) <<<
+--  >>> NOClip (ONE-SHOT) <<<
 local noclipSavedState = false
-
-local NOCOLLIC_INTERVAL = 0.03
-local noclipLoopRunning = false
 
 local function NoclipOnce()
     local plr = player
@@ -420,37 +417,6 @@ local function RestoreCollisions()
     end
 end
 
-local function startNoclipLoop()
-    if noclipLoopRunning then return end
-    noclipLoopRunning = true
-    spawn(function()
-        while noclipLoopRunning do
-            if not noclipEnabled or deactivated then
-                local c = player.Character
-                if c then RestoreCollisions() end
-                noclipLoopRunning = false
-                break
-            end
-            local c = player.Character
-            if c then
-                -- re-apply noclip to every BasePart
-                for _, part in pairs(c:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        pcall(function() part.CanCollide = false end)
-                    end
-                end
-            end
-            wait(NOCOLLIC_INTERVAL)
-        end
-    end)
-end
-
-local function stopNoclipLoop()
-    noclipLoopRunning = false
-    local c = player.Character
-    if c then RestoreCollisions() end
-end
-
 local function enableNoclip(enable)
     noclipEnabled = enable
     noclipSquir.Text = enable and "ON" or "OFF"
@@ -459,12 +425,12 @@ local function enableNoclip(enable)
         return
     end
     if enable then
-        startNoclipLoop()
+        NoclipOnce() -- one-shot application
     else
-        stopNoclipLoop()
+        RestoreCollisions()
     end
 end
---  <<< end replaced noclip section >>>
+--  <<< end noclip one-shot section >>>
 
 local function enableFlyObjects(enable)
     local char = player.Character
@@ -596,8 +562,8 @@ deactivateBtn.MouseButton1Click:Connect(function()
         noclipSavedState = noclipEnabled
         if noclipEnabled then
             noclipEnabled = false
-            -- stop noclip by restoring collisions
-            stopNoclipLoop()
+            -- restore collisions on deactivate
+            RestoreCollisions()
             noclipSquir.Text = "OFF"
         end
         cleanupFlyObjects()
@@ -609,7 +575,7 @@ deactivateBtn.MouseButton1Click:Connect(function()
         if noclipSavedState then
             noclipEnabled = true
             noclipSquir.Text = "ON"
-            startNoclipLoop()
+            NoclipOnce()
         end
         if flyEnabled then enableFlyObjects(true) end
     end
@@ -685,9 +651,9 @@ local function onCharacterAdded(char)
     end
     setFly(false)
     if noclipEnabled and not deactivated then
-        startNoclipLoop()
+        NoclipOnce()
     else
-        stopNoclipLoop()
+        RestoreCollisions()
     end
     cleanupFlyObjects()
 end
