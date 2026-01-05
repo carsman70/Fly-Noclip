@@ -1,13 +1,10 @@
--- ScriptBlock — noclip loop 0.3s
-
+-- Fly & Noclip (slider display fixed)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local workspace = workspace
-
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
 
 local GAME_DEFAULT_WALKSPEED = 16
 local MAX_VALUE = 1000
@@ -18,7 +15,7 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ScriptBlock_GUI"
 screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 1000
-screenGui.Parent = playerGui
+screenGui.Parent = game:GetService("CoreGui")
 
 local FRAME_W, FRAME_H = 300, 220
 local mainFrame = Instance.new("Frame", screenGui)
@@ -30,6 +27,7 @@ mainFrame.BackgroundTransparency = 0.18
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = true
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,10)
+mainFrame.Active = true
 
 local titleBar = Instance.new("Frame", mainFrame)
 titleBar.Name = "TitleBar"
@@ -228,6 +226,18 @@ end
 local isDraggingGUI = false
 local dragStartMouse = Vector2.new()
 local dragStartPos = Vector2.new()
+
+-- formatting helper (keeps display neat)
+local function formatNumber(n)
+    if type(n) ~= "number" then return "0" end
+    local s = tostring(n)
+    if s:find("%.") then
+        s = s:gsub("(%.%d-)0+$", "%1")
+        s = s:gsub("%.$", "")
+    end
+    return s
+end
+
 dragSticker.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         isDraggingGUI = true
@@ -255,17 +265,32 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDraggingGUI = false end end)
 
+-- slider helpers that update display immediately
+local function setSliderValueImmediate(slider, value)
+    local v = math.clamp(value, 0, MAX_VALUE)
+    slider.Value = v
+    slider.SavedValue = v
+    slider.Fill.Size = UDim2.new(v / MAX_VALUE, 0, 1, 0)
+    slider.Knob.Position = UDim2.new(v / MAX_VALUE, 0, 0.5, 0)
+    -- update the text display RIGHT AWAY (this fixes the bug you saw)
+    pcall(function() slider.ValueBox.Text = formatNumber(v) end)
+end
+
 local function enableSliderDrag(slider)
     local track, knob = slider.Track, slider.Knob
     local dragging = false
+
     knob.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
             end)
         end
     end)
+
     track.InputBegan:Connect(function(input)
         if not (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then return end
         local pos = input.Position or UserInputService:GetMouseLocation()
@@ -273,13 +298,9 @@ local function enableSliderDrag(slider)
         local rel = math.clamp((mx - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1)
         local raw = rel * MAX_VALUE
         local value = math.floor((raw + SNAP/2) / SNAP) * SNAP
-        slider.Value = value; slider.SavedValue = value
-        slider.Fill.Size = UDim2.new(value / MAX_VALUE, 0, 1, 0)
-        slider.Knob.Position = UDim2.new(value / MAX_VALUE, 0, 0.5, 0)
-        if not slider.ValueBox:IsFocused() then
-            slider.ValueBox.Text = tostring(value)
-        end
+        setSliderValueImmediate(slider, value)
     end)
+
     UserInputService.InputChanged:Connect(function(input)
         if not dragging then return end
         if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
@@ -288,16 +309,13 @@ local function enableSliderDrag(slider)
         local rel = math.clamp((mx - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1)
         local raw = rel * MAX_VALUE
         local value = math.floor((raw + SNAP/2) / SNAP) * SNAP
-        slider.Value = value; slider.SavedValue = value
-        slider.Fill.Size = UDim2.new(value / MAX_VALUE, 0, 1, 0)
-        slider.Knob.Position = UDim2.new(value / MAX_VALUE, 0, 0.5, 0)
-        if not slider.ValueBox:IsFocused() then
-            slider.ValueBox.Text = tostring(value)
-        end
+        setSliderValueImmediate(slider, value)
     end)
 end
+
 enableSliderDrag(speedRow)
 
+-- keep text numeric while typing (cursor preservation)
 local function sanitizeNumberStringAllowDot(s)
     local cleaned = s:gsub("[^%d%.]", "")
     local firstDot = cleaned:find("%.")
@@ -309,15 +327,6 @@ local function sanitizeNumberStringAllowDot(s)
     if cleaned == "" then return nil end
     local n = tonumber(cleaned)
     return n, cleaned
-end
-local function formatNumber(n)
-    if type(n) ~= "number" then return "0" end
-    local s = tostring(n)
-    if s:find("%.") then
-        s = s:gsub("(%.%d-)0+$", "%1")
-        s = s:gsub("%.$", "")
-    end
-    return s
 end
 
 local function liveFilterDigitsAndDot(box)
@@ -350,29 +359,16 @@ local function hookValueBox(slider)
         local txt = box.Text or ""
         local num, _ = sanitizeNumberStringAllowDot(txt)
         if not num then
-            box.Text = tostring(slider.SavedValue)
-            slider.Value = slider.SavedValue
-            slider.Fill.Size = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 1, 0)
-            slider.Knob.Position = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 0.5, 0)
+            setSliderValueImmediate(slider, slider.SavedValue)
             return
         end
         local clamped = math.clamp(num, 0, MAX_VALUE)
-        if clamped ~= num then
-            box.Text = tostring(slider.SavedValue)
-            slider.Value = slider.SavedValue
-            slider.Fill.Size = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 1, 0)
-            slider.Knob.Position = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 0.5, 0)
-            return
-        end
-        slider.Value = clamped
-        slider.SavedValue = clamped
-        slider.Fill.Size = UDim2.new(clamped / MAX_VALUE, 0, 1, 0)
-        slider.Knob.Position = UDim2.new(clamped / MAX_VALUE, 0, 0.5, 0)
-        box.Text = tostring(clamped)
+        setSliderValueImmediate(slider, clamped)
     end)
 end
 hookValueBox(speedRow)
 
+-- fly/noclip core
 local flyEnabled = false
 local noclipEnabled = false
 local deactivated = false
@@ -393,7 +389,6 @@ local function cleanupFlyObjects()
     end
 end
 
---  >>> NOClip (LOOP 0.3s, applies to all BaseParts under character) <<<
 local noclipSavedState = false
 local NOCOLLIC_INTERVAL = 0.3
 local noclipLoopRunning = false
@@ -447,16 +442,10 @@ local function enableNoclip(enable)
     noclipEnabled = enable
     noclipSquir.Text = enable and "ON" or "OFF"
     if deactivated then
-        -- save desired state for restore on reactivate
         return
     end
-    if enable then
-        startNoclipLoop()
-    else
-        stopNoclipLoop()
-    end
+    if enable then startNoclipLoop() else stopNoclipLoop() end
 end
---  <<< end noclip loop section >>>
 
 local function enableFlyObjects(enable)
     local char = player.Character
@@ -494,9 +483,7 @@ RunService.Heartbeat:Connect(function(dt)
     local cam = workspace.CurrentCamera
     if not hrp or not hum or not cam then return end
     if flyEnabled then
-        if not bv or not bg or not bv.Parent then
-            enableFlyObjects(true)
-        end
+        if not bv or not bg or not bv.Parent then enableFlyObjects(true) end
         local camC = cam.CFrame
         local camLook = camC.LookVector
         local camRight = camC.RightVector
@@ -516,6 +503,7 @@ RunService.Heartbeat:Connect(function(dt)
             end
         else
             local dirUnit = dir.Unit
+            -- use slider.Value directly (kept in sync by setSliderValueImmediate)
             local speed = math.clamp(speedRow.Value or GAME_DEFAULT_WALKSPEED, 0, MAX_VALUE)
             local targetVel = dirUnit * speed
             if bv and bv.Parent then
@@ -549,9 +537,7 @@ local function updateRevertVisibility()
     end
 end
 
-local function setNoclip(on)
-    enableNoclip(on)
-end
+local function setNoclip(on) enableNoclip(on) end
 
 local function setFly(on)
     flyEnabled = on
@@ -562,9 +548,7 @@ local function setFly(on)
         if not on then cleanupFlyObjects() end
         return
     end
-    if on then
-        enableFlyObjects(true)
-    else
+    if on then enableFlyObjects(true) else
         enableFlyObjects(false)
         local char = player.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -608,11 +592,7 @@ end)
 
 revertBtn.MouseButton1Click:Connect(function()
     local default = GAME_DEFAULT_WALKSPEED or 16
-    speedRow.Value = default
-    speedRow.SavedValue = default
-    speedRow.Fill.Size = UDim2.new(default / MAX_VALUE, 0, 1, 0)
-    speedRow.Knob.Position = UDim2.new(default / MAX_VALUE, 0, 0.5, 0)
-    speedRow.ValueBox.Text = tostring(default)
+    setSliderValueImmediate(speedRow, default)
     if not deactivated and not flyEnabled then
         local char = player.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -658,6 +638,7 @@ minBtn.MouseButton1Click:Connect(function()
     end
     updateSwapPosition()
 end)
+
 closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
 local defaultsCaptured = false
@@ -667,19 +648,11 @@ local function onCharacterAdded(char)
         if not defaultsCaptured then
             GAME_DEFAULT_WALKSPEED = hum.WalkSpeed or GAME_DEFAULT_WALKSPEED
             defaultsCaptured = true
-            speedRow.Value = GAME_DEFAULT_WALKSPEED
-            speedRow.SavedValue = GAME_DEFAULT_WALKSPEED
-            speedRow.Fill.Size = UDim2.new(speedRow.Value / MAX_VALUE, 0, 1, 0)
-            speedRow.Knob.Position = UDim2.new(speedRow.Value / MAX_VALUE, 0, 0.5, 0)
-            speedRow.ValueBox.Text = tostring(speedRow.Value)
+            setSliderValueImmediate(speedRow, GAME_DEFAULT_WALKSPEED)
         end
     end
     setFly(false)
-    if noclipEnabled and not deactivated then
-        startNoclipLoop()
-    else
-        RestoreCollisions()
-    end
+    if noclipEnabled and not deactivated then startNoclipLoop() else RestoreCollisions() end
     cleanupFlyObjects()
 end
 
